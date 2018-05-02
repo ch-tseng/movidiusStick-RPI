@@ -343,3 +343,62 @@ class tinyYOLO2:
 
         display_image = display_image[...,::-1]
         return display_image
+
+class Agenet:
+    def __init__(self, mvnc, device, graphPath, meanPath, resize, Labels):
+        # read in the graph file to memory buffer
+        with open(graphPath, mode='rb') as f:
+            graph_in_memory = f.read()
+        graph = device.AllocateGraph(graph_in_memory)
+        graph.SetGraphOption(mvnc.GraphOption.ITERATIONS, 1)
+        iterations = graph.GetGraphOption(mvnc.GraphOption.ITERATIONS)
+        ilsvrc_mean = np.load(meanPath).mean(1).mean(1) #loading the mean file
+
+        self.resize = resize
+        self.graph = graph
+        self.labels = Labels
+        self.mean = ilsvrc_mean
+
+    def run(self, captured, confident):
+        graph = self.graph
+        # Load tensor and get result.  This executes the inference on the NCS
+        img=cv2.resize(captured, self.resize)
+        img = img.astype(np.float32)
+        ilsvrc_mean = self.mean
+        img[:,:,0] = (img[:,:,0] - ilsvrc_mean[0])
+        img[:,:,1] = (img[:,:,1] - ilsvrc_mean[1])
+        img[:,:,2] = (img[:,:,2] - ilsvrc_mean[2])
+
+        graph = self.graph
+        graph.LoadTensor(img.astype(np.float16), 'user object')
+        output, userobj = graph.GetResult()
+
+        #print('\n------- predictions --------')
+        order = output.argsort()
+        last = len(order)-1
+        predicted=int(order[last])
+        age_list = self.labels
+        print('the age range is ' + age_list[predicted] + ' with confidence of %3.1f%%' % (100.0*output[predicted]))
+
+        if(output[predicted]>confident):
+            label_background_color = (70, 120, 70) # greyish green background for text
+            label_text_color = (255, 255, 255)   # white text
+
+            label_left = 40
+            label_top = 210
+            label_right = 200
+            label_bottom = 225
+
+            cv2.rectangle(captured, (label_left - 1, label_top - 1), (label_right + 1, label_bottom + 1),
+                          label_background_color, -1)
+
+            # label text above the box
+            displayText = 'Age: '+age_list[predicted] + ' %3.1f%%' % (100.0*output[predicted])
+  
+            cv2.putText(captured, displayText, (label_left+10, label_bottom-4), cv2.FONT_HERSHEY_DUPLEX, 0.4, label_text_color, 1)
+
+ 
+        #return age_list[predicted], 100.0*output[predicted]
+        captured = captured[:, :, ::-1]  # convert to RGB
+        return captured
+

@@ -7,6 +7,7 @@ import io
 import time
 import picamera
 
+dpModel = "Agenet"   #tinyYolo2, sddMobileNets, Agenet
 lcd = ILI9341(LCD_size_w=240, LCD_size_h=320, LCD_Rotate=0)
 rotate = 90
 
@@ -21,28 +22,35 @@ device = mvnc.Device(devices[0])
 # Open the NCS
 device.OpenDevice()
 
-#from libMovidius.models import ssdMobilenets
-from libMovidius.models import tinyYOLO2
+if(dpModel=="sddMobileNets"):
+    from libMovidius.models import ssdMobilenets
+    graphPath = 'ssdMobileNets/graph'
+    LABELS = ('background',
+              'aeroplane', 'bicycle', 'bird', 'boat',
+              'bottle', 'bus', 'car', 'cat', 'chair',
+              'cow', 'diningtable', 'dog', 'horse',
+              'motorbike', 'person', 'pottedplant',
+              'sheep', 'sofa', 'train', 'tvmonitor')
+    dimSize = (240,320)
+    model = ssdMobilenets(device, graphPath, LABELS)
 
-# --> SSD_Mobilenets
-#graphPath = 'ssdMobileNets/graph'
-#LABELS = ('background',
-#          'aeroplane', 'bicycle', 'bird', 'boat',
-#          'bottle', 'bus', 'car', 'cat', 'chair',
-#          'cow', 'diningtable', 'dog', 'horse',
-#          'motorbike', 'person', 'pottedplant',
-#          'sheep', 'sofa', 'train', 'tvmonitor')
-#dimSize = (240,320)
-#
-# --> TinyYOLO2
-graphPath = 'tinyYOLO2/graph'
-LABELS = ["aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car",
-          "cat", "chair", "cow", "diningtable", "dog", "horse", "motorbike",
-          "person", "pottedplant", "sheep", "sofa", "train","tvmonitor"]
-dimSize = (448,448)
+elif(dpModel=="tinyYolo2"):
+    from libMovidius.models import tinyYOLO2
+    graphPath = 'tinyYOLO2/graph'
+    LABELS = ["aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car",
+              "cat", "chair", "cow", "diningtable", "dog", "horse", "motorbike",
+              "person", "pottedplant", "sheep", "sofa", "train","tvmonitor"]
+    dimSize = (448,448)
 
-#model = ssdMobilenets(device, graphPath, LABELS)
-model = tinyYOLO2(device, graphPath, LABELS)
+    model = tinyYOLO2(device, graphPath, LABELS)
+
+elif(dpModel=="Agenet"):
+    from libMovidius.models import Agenet
+    graphPath = "Agenet/graph"
+    meanPath = "Agenet/age_gender_mean.npy"
+    age_list=['0-2','4-6','8-12','15-20','25-32','38-43','48-53','60-100']
+    dimSize = (227,227)
+    model = Agenet(mvnc, device, graphPath, meanPath, dimSize, age_list)
 
 def videoCamera():
     stream = io.BytesIO()
@@ -68,7 +76,7 @@ def videoCamera():
 while True:
     imgCaptured = videoCamera()
 
-    image = model.run(imgCaptured, 0.10)
+    image = model.run(imgCaptured, 0.60)
     if image is not None:
         #image = image[:, :, ::-1]
         lcd.displayImg(image)
