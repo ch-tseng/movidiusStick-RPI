@@ -1,6 +1,4 @@
 from mvnc import mvncapi as mvnc
-#from libMovidius.models import ssdMobilenets
-from libMovidius.models import tinyYOLO2
 from libMovidius.device.lcd import ILI9341
 import numpy as np
 import cv2
@@ -10,7 +8,6 @@ import time
 import picamera
 
 lcd = ILI9341(LCD_size_w=240, LCD_size_h=320, LCD_Rotate=0)
-dim=(300,300)
 rotate = 90
 
 devices = mvnc.EnumerateDevices()
@@ -23,6 +20,9 @@ device = mvnc.Device(devices[0])
 
 # Open the NCS
 device.OpenDevice()
+
+#from libMovidius.models import ssdMobilenets
+from libMovidius.models import tinyYOLO2
 
 # --> SSD_Mobilenets
 #graphPath = 'ssdMobileNets/graph'
@@ -39,8 +39,10 @@ graphPath = 'tinyYOLO2/graph'
 LABELS = ["aeroplane", "bicycle", "bird", "boat", "bottle", "bus", "car",
           "cat", "chair", "cow", "diningtable", "dog", "horse", "motorbike",
           "person", "pottedplant", "sheep", "sofa", "train","tvmonitor"]
-dimSize = (447,447)
+dimSize = (448,448)
 
+#model = ssdMobilenets(device, graphPath, LABELS)
+model = tinyYOLO2(device, graphPath, LABELS)
 
 def videoCamera():
     stream = io.BytesIO()
@@ -49,7 +51,7 @@ def videoCamera():
         camera.resolution = (1024, 768)
         #camera.start_preview()
         #time.sleep(2)
-        camera.capture(stream, format='jpeg', resize=(447, 447))
+        camera.capture(stream, format='jpeg', resize=dimSize)
 
         # Construct a numpy array from the stream
         data = np.fromstring(stream.getvalue(), dtype=np.uint8)
@@ -62,13 +64,11 @@ def videoCamera():
 
         return cv_image
 
-#model = ssdMobilenets(device, graphPath, LABELS)
-model = tinyYOLO2(device, graphPath, LABELS)
 
 while True:
     imgCaptured = videoCamera()
 
-    image = model.run(imgCaptured)
+    image = model.run(imgCaptured, 0.10)
     if image is not None:
         #image = image[:, :, ::-1]
         lcd.displayImg(image)

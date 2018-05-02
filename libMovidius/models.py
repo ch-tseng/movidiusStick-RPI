@@ -12,7 +12,8 @@ class ssdMobilenets:
         self.graph = graph
         self.labels = Labels
 
-    def run(self, captured):
+    def run(self, captured, confident):
+        confident = confident * 100
         # The graph file that was created with the ncsdk compiler
         ssdMobilenets_graph = self.graph
 
@@ -21,8 +22,9 @@ class ssdMobilenets:
 
         # run a single inference on the image and overwrite the
         # boxes and labels
-        return self.__run_inference(infer_image, ssdMobilenets_graph)
-
+        img = self.__run_inference(infer_image, ssdMobilenets_graph, confident)
+        img = img[:, :, ::-1]
+        return img
 
     # Run an inference on the passed image
     # image_to_classify is the image on which an inference will be performed
@@ -30,7 +32,7 @@ class ssdMobilenets:
     #    and labels identifying the found objects within the image.
     # ssd_mobilenet_graph is the Graph object from the NCAPI which will
     #    be used to peform the inference.
-    def __run_inference(self, image_to_classify, ssd_mobilenet_graph):
+    def __run_inference(self, image_to_classify, ssd_mobilenet_graph, confident):
 
         resized_image = self.__preprocess_image(image_to_classify)
         ssd_mobilenet_graph.LoadTensor(resized_image.astype(np.float16), None)
@@ -41,15 +43,15 @@ class ssdMobilenets:
         for box_index in range(num_valid_boxes):
             base_index = 7+ box_index * 7
             if (not np.isfinite(output[base_index]) or
-                not np.isfinite(output[base_index + 1]) or
-                not np.isfinite(output[base_index + 2]) or
-                not np.isfinite(output[base_index + 3]) or
-                not np.isfinite(output[base_index + 4]) or
-                not np.isfinite(output[base_index + 5]) or
-                not np.isfinite(output[base_index + 6])):
-                    # boxes with non infinite (inf, nan, etc) numbers must be ignored
-                    print('box at index: ' + str(box_index) + ' has nonfinite data, ignoring it')
-                    continue
+                    not np.isfinite(output[base_index + 1]) or
+                    not np.isfinite(output[base_index + 2]) or
+                    not np.isfinite(output[base_index + 3]) or
+                    not np.isfinite(output[base_index + 4]) or
+                    not np.isfinite(output[base_index + 5]) or
+                    not np.isfinite(output[base_index + 6])):
+                # boxes with non infinite (inf, nan, etc) numbers must be ignored
+                print('box at index: ' + str(box_index) + ' has nonfinite data, ignoring it')
+                continue
 
             # clip the boxes to the image size incase network returns boxes outside of the image
             x1 = max(0, int(output[base_index + 3] * image_to_classify.shape[0]))
@@ -66,13 +68,15 @@ class ssdMobilenets:
                   'Confidence: ' + str(output[base_index + 2]*100) + '%  ' +
                   'Top Left: (' + x1_ + ', ' + y1_ + ')  Bottom Right: (' + x2_ + ', ' + y2_ + ')')
 
-            # overlay boxes and labels on the original image to classify
-            return self.__overlay_on_image(image_to_classify, output[base_index:base_index + 7])
+            image_to_classify = self.__overlay_on_image(image_to_classify, output[base_index:base_index + 7], confident)
 
-    def __overlay_on_image(self, display_image, object_info):
+         # overlay boxes and labels on the original image to classify
+        return image_to_classify
+
+    def __overlay_on_image(self, display_image, object_info, confident):
 
         # the minimal score for a box to be shown
-        min_score_percent = 20
+        min_score_percent = confident
 
         source_image_width = display_image.shape[1]
         source_image_height = display_image.shape[0]
@@ -109,7 +113,7 @@ class ssdMobilenets:
                       label_background_color, -1)
 
         # label text above the box
-        cv2.putText(display_image, label_text, (label_left, label_bottom), cv2.FONT_HERSHEY_SIMPLEX, 0.5, label_text_color, 1)
+        cv2.putText(display_image, label_text, (label_left, label_bottom), cv2.FONT_HERSHEY_DUPLEX, 0.5, label_text_color, 1)
 
         return display_image
 
@@ -140,7 +144,7 @@ class tinyYOLO2:
         self.NETWORK_IMAGE_WIDTH = 448
         self.NETWORK_IMAGE_HEIGHT = 448
 
-    def run(self, captured):
+    def run(self, captured, confident=0.07):
         graph = self.graph
         # Load tensor and get result.  This executes the inference on the NCS
         input_image = captured
@@ -152,13 +156,13 @@ class tinyYOLO2:
 
         graph.LoadTensor(input_image.astype(np.float16), 'user object')
         output, userobj = graph.GetResult()
-        filtered_objs = self.__filter_objects(output.astype(np.float32), input_image.shape[1], input_image.shape[0]) # fc27 instead of fc12 for yolo_small
+        filtered_objs = self.__filter_objects(output.astype(np.float32), input_image.shape[1], input_image.shape[0], confident) # fc27 instead of fc12 for yolo_small
         img = self.__display_objects_in_gui(display_image, filtered_objs)
         #print(img.shape())
         return img
 
 
-    def __filter_objects(self, inference_result, input_image_width, input_image_height):
+    def __filter_objects(self, inference_result, input_image_width, input_image_height, confident):
 
         # the raw number of floats returned from the inference (GetResult())
         num_inference_results = len(inference_result)
@@ -167,7 +171,7 @@ class tinyYOLO2:
         network_classifications = self.labels
 
         # only keep boxes with probabilities greater than this
-        probability_threshold = 0.06
+        probability_threshold = confident
 
         num_classifications = len(network_classifications) # should be 20
         grid_size = 7 # the image is a 7x7 grid.  Each box in the grid is 64x64 pixels
@@ -323,7 +327,7 @@ class tinyYOLO2:
             box_right = min(center_x + half_width, source_image_width)
             box_bottom = min(center_y + half_height, source_image_height)
 
-            print('box at index ' + str(obj_index) + ' is... left: ' + str(box_left) + ', top: ' + str(box_top) + ', right: ' + str(box_right) + ', bottom: ' + str(box_bottom))
+            print('box at index ' + str(obj_index) + ' is ' + filtered_objects[obj_index][0] + '( %.2f' % filtered_objects[obj_index][5] + ') left: ' + str(box_left) + ', top: ' + str(box_top) + ', right: ' + str(box_right) + ', bottom: ' + str(box_bottom))
 
             #draw the rectangle on the image.  This is hopefully around the object
             box_color = (0, 255, 0)  # green box
@@ -334,8 +338,8 @@ class tinyYOLO2:
             label_background_color = (70, 120, 70) # greyish green background for text
             label_text_color = (255, 255, 255)   # white text
             cv2.rectangle(display_image,(box_left, box_top-20),(box_right,box_top), label_background_color, -1)
-            cv2.putText(display_image,filtered_objects[obj_index][0] + ' : %.2f' % filtered_objects[obj_index][5], (box_left+5,box_top-7),cv2.FONT_HERSHEY_SIMPLEX, 0.5, label_text_color, 1)
+            cv2.putText(display_image,filtered_objects[obj_index][0] + ' : %.2f' % filtered_objects[obj_index][5], (box_left+5,box_top-7),cv2.FONT_HERSHEY_DUPLEX, 0.8, label_text_color, 1)
 
 
-        infer_image = display_image[...,::-1]
-        return infer_image
+        display_image = display_image[...,::-1]
+        return display_image
